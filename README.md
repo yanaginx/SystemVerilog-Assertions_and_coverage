@@ -15,7 +15,7 @@ Assertion is a check against a design specification or rule
 → To make sure that the rule is never violated by the design
 
 Example for assertions:
-![](note_img\assertion_example.png)
+![](/note_img/assertion_example.png)
 
 #### Why assertions
 
