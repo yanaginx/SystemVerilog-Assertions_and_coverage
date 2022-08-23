@@ -77,3 +77,94 @@ always @(posedge clk)
             #5 $error("Assert failed at time %0t", t);
         end
 ```
+
+More example:
+
+> Assertions' failure will emit the `event1`
+
+```sv
+assert (myfunc(a,b))
+    count1 = count + 1;
+else ->event1;
+```
+
+> Assertion used to check if y != 0 in any given time
+
+```sv
+assert (y == 0)
+else flag = 1;
+```
+
+> Assertion used to check if the state is not $onehot
+
+```sv
+always @(state) begin
+    assert (state == $onehot)
+    else $fatal;
+end
+```
+
+#### Severity/Error handling
+
+- Assertion failure is associated with a severity:
+  - `$fatal` is a run-time fatal
+  - `$error` is a run-time error
+  - `$warning` is a run-time warning, can be suppressed in a tool-specific manner
+  - `$info` indicates that the assertion failures carries no specific severity
+
+> Specify how severe a assertion will fail
+
+#### Concurrent assertions
+
+Assertions that test for a sequence of events that spread over multiple clock cycles
+
+- Temporal
+- `property` keyword used to distinguishes a concurrent assertion from an immediate assertion
+- Concurrent because they execute in parallel with other design blocks
+
+```sv
+[name:] assert property (cont_prop(rst,in1,in2)) [pass_stat] [else fail_stat];
+```
+
+Assertions is evaluated only at the occurence of a clock ticks
+
+> The values of variables used are sampled values. Values are sampled in simulation ticks
+
+![](/note_img/value_sampling_on_simulation.png)
+
+#### Concurrent Assertions Evaluation
+
+Concurrent Assertions expression are:
+
+- Sampled in a preponed region
+- Evaluated in an observe region, using sampled value
+- Execute pass/fail statements in re-active region
+
+SystemVerilog value evaluation in a timeslot:
+![](/note_img/value_sampling_details.png)
+
+#### Basic Example
+
+Request-Grant protocol Spec: **Request** high should be followed by **Grant** after 2 cycles, then **Request** is deactivated along with **Grant**.
+
+```sv
+property req_grant_prop
+    @(posedge clk) req ##2 gnt ##1 !req ## !gnt;
+endproperty
+
+assert property req_grant_prop else $error("Req-Gnt Protocol Violation");
+```
+
+> `##2 means the time consuming of 2 cycles `## means the another cycle later
+
+#### Case Study:
+
+- Design spec: Simple Round Robin Arbiter with 3 input requests `req1`, `req2`, `req3` and output `grant1`, `grant2`, `grant3`
+
+- Immediate
+
+  - After reset - None of `req1`/`req2`/`req3` can be X/Z
+  - `grant1`, `grant2` and `grant3` cannot be High at the same cycle
+
+- Concurrent
+  - `req1`/`req2`/`req3` going high should be followed by `grant1`/`grant2`/`grant3` in "n" cycles
