@@ -308,3 +308,111 @@ endproperty
     - If precondition (LHS) is true - RHS sequence evaluation start in the **next** clock cycle
     - If precondition (LHS) is false - RHS sequence acts as if succeeded (no evaluation occurs)
       ![](/note_img/nonoverlapped_implication.png)
+
+#### Cycle delays operator
+
+- `##` represents cycle delay (or number of sampling edges)
+
+- `##n` specifies `n` clock cycles
+
+  > `##0` means same cycle - overlapping signals
+
+- `##[min:max]` specifies a range of clock cycles
+
+  - `min` and `max` must be zero or greater
+  - Sequence will match on the very first intance of n in the window of `min` to `max` cycles
+
+- `$` specifies infinite number of cycles (til simulation ends)
+
+  > `req ##[1:$] grant`
+
+  Meaning asserting `req` signal will eventually followed by asserting `grant` signal without specifying how long after the assertion of `req`
+
+#### Repetition operator
+
+- Sequence of events can be repeated for a repeated count using `[*n]`
+  - `n` must be >= 0
+  - `n` cannot be equal to `$`
+
+```sv
+sequence a_b
+    @(posedge clk) a ##1 b[*2];
+endsequence
+```
+
+> `b[*2]` means `b` must be true for 2 consecutive clocks
+
+_Usage_: If parity error detected - error log should be high for `n` number of clocks
+
+- Consecutive repetition can occurs for a range count using `[*m:n]`
+
+```sv
+sequence a_b
+    @(posedge clk) a ##1 b[*2:5];
+endsequence
+```
+
+> `b[*2:5]` means `b` must be true for minimum 2 consecutive clocks and maximum 5 consecutive clocks
+
+The sequence is equivalent to:
+
+```sv
+a ##1 b ##1 b ||
+a ##1 b ##1 b ##1 b ||
+a ##1 b ##1 b ##1 b ##1 b ||
+a ##1 b ##1 b ##1 b ##1 b ##1 b
+```
+
+- `[=m]` operator can be used if an event repetition of `m` non-consecutive cycles are to be detected
+  - `m` must be >= 0
+  - `m` cannot be equal to `$`
+
+```sv
+sequence a_b
+    @(posedge clk) a ##1 b[=3];
+endsequence
+```
+
+> `b[=3]` means `b` must be true for 3 clock cycles but not necessarily consecutive
+
+_Usage_: if a burst read of length = 4 request happens - if we want to check that 4 read `data` and `ack` - not necessarily in consecutive cycles
+
+- Non-consecutive repetition can occurs for a range count using `[=m:n]`
+
+```sv
+sequence a_b
+    @(posedge clk) a ##1 b[=3:5];
+endsequence
+```
+
+> `b[=3:5]` means `b` must be true for minimum 3 clocks and maximum 5 clocks but not necessarily
+
+- Empty sequence: a sequence that does not match over any positive number of clocks
+  > `a[*0]`
+
+Example #1:
+
+```sv
+a ##2 b ##1 a ##2 b ##1 a ##2 b ##1 a ##2 b ##1 a ##2 b
+```
+
+Can be simplified to:
+
+```sv
+(a ##2 b)[*5]
+```
+
+Example #2:
+
+```sv
+a[*0:3] ##1 b ##1 c
+```
+
+is equivalent to
+
+```sv
+b ##1 c ||
+a ##1 b ##1 c ||
+a ##1 a ##1 b ##1 c ||
+a ##1 a ##1 a ##1 b##1 c
+```
