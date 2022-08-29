@@ -416,3 +416,87 @@ a ##1 b ##1 c ||
 a ##1 a ##1 b ##1 c ||
 a ##1 a ##1 a ##1 b##1 c
 ```
+
+#### AND operator
+
+- Use `AND` operator if two sequence operands need to match
+
+  > `Seq1 AND Seq2`
+
+- The resulting sequences matches if:
+
+  - Both `Seq1` and `Seq2` matches when starting from the same start point
+  - Resulting sequence match is at the cycle when both matches
+  - The end time for individual sequences can be different. The end time of the resulting sequence will be the end time of the longest one
+
+- If both operands are sampled signals instead of sequences
+  -> Both needs to be evaluate to true at the same cycle for the `AND` to match
+
+Example #1:
+![](/note_img/AND_operator_example.png)
+
+In the example the resulting sequence from the `AND` operator match at the match of the later sequence (`te3 ##2 te4 ##2 te5`)
+
+> Both sequences must have the same evaluating point
+
+In the example, same evaluating point can be: clk cycle 2 and clk cycle 8
+
+Example #2:
+![](/note_img/AND_operator_example_2.png)
+
+In this example, there are 2 matchs possible because either the first or the second operand (sequence) can end first
+
+Example #3:
+![](/note_img/AND_operator_example_3.png)
+
+#### Intersection operator (`intersect`)
+
+- Same as `AND` operator - except that the length (the time period) of operands has to match
+  > Meaning the end time of both sequences must match
+
+Example:
+
+```sv
+(te1 ##[1:5] te2) intersect (te3 ##2 te4 ##2 te5)
+```
+
+![](/note_img/intersect_operator_eaxmple.png)
+
+In this example, only 1 match possible at cycle 12 since the end cycle of both sequences must match.
+
+#### OR operator
+
+- The operator `OR` is used when at least one of the two operand sequences is expected to match
+
+  > `Seq1 OR Seq2`
+
+- The resulting sequences matches if:
+
+  - Both `Seq1` and `Seq2` matches when starting from the same start point
+  - Resulting sequence matches when either `Seq1` or `Seq2` match
+  - The end time for individual sequences can be different. The end time of the resulting sequence will be the end time of the latest matched one
+
+- If both operands are sampled signals instead of sequences
+  -> Match happends when one of them evaluate to true
+
+Example #1:
+![](/note_img/OR_operator_example.png)
+
+Example #2:
+![](/note_img/OR_operator_example_2.png)
+
+Example #3:
+![](/note_img/OR_operator_example_3.png)
+
+#### Case study: Application of `AND`/`OR`
+
+Spec: If write burst length == 4, write lengths can be 1, 2 or 4
+
+```sv
+property BurstLengthValid
+    @(posedge clk) disable iff (!rst)
+    ((burstLen == 4) |-> (wrlen==1) OR (wrlen==2) OR (wrlen==4));
+endproperty
+
+assert property (BurstLengthValid)
+```
