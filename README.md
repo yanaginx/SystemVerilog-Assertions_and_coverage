@@ -500,3 +500,148 @@ endproperty
 
 assert property (BurstLengthValid)
 ```
+
+#### `first_match` operator
+
+The `first_match` operator matches only the first of multiple possible matches for an evaluation attempt of its operand sequence.
+
+The remaining mathces are discarded
+
+```sv
+sequence t1;
+    te1 ##[2:5] te2;
+endsequence
+```
+
+The sequence can have multiple matches:
+
+```sv
+te1 ##2 te2
+te1 ##3 te2
+te1 ##4 te2
+te1 ##5 te2
+```
+
+Example #1
+
+```sv
+sequence t2;
+    (a ##[2:3] b) OR (c ##[1:2] d);
+endsequence
+
+sequence ts2;
+    first_match(t2);
+endsequence
+```
+
+Possible matches for `t2`:
+
+```sv
+a ##2 b
+a ##3 b
+c ##1 d
+c ##2 d
+```
+
+Possible matches for `ts2` are only the first of the 4 matches above
+
+#### Case study: `first_match` usage
+
+_Spec_: Every time a PCI bus goes idle, state machine should go back to IDLE state
+
+> A PCI BUS Idle can be detected if `frame` and `irdy` signal are high for at least 2 cycles
+
+```sv
+sequence checkBusIdle
+    (##[2:$] (frame && irdy));
+endsequence
+
+property first_match_idle
+    @(posedge clk) first_match(checkBusIdle) |-> (state==busidle);
+endproperty
+```
+
+#### `throughout` operator
+
+- Useful for testing a condition like a "signal" or an "expression" is true throughout a sequence
+- Usage: `sig1/exp1 throughout seq1`
+- LHS of `throughout cannot be other sequence
+
+Example:
+
+_Spec_: Once burst mode signal goes low and 2 cycles later `irdy`/`trdy` signal goes low for 7 consecutive cycles - the burst mode signal should remain low throughout
+
+> Once `irdy`/`trdy` goes low for 7 consecutive cycles, burst_mode signal should never goes high
+
+```sv
+sequence burst_rule1;
+    @(posedge mclk)
+        $fell(burst_mode) ##0
+        (!burst_mode) throughout (##2 ((trdy==0) && (irdy==0)) [*7]);
+endsequence
+```
+
+> `$fell` is to keep track of the negedge of the signal (going from high to low)
+
+> When `$fell` happens, in the same cycle, the `burst_mode` must be low throughout the deassertion of `trdy` and `irdy` for 7 consecutive cycles
+
+![](/note_img/matching_throughout_sequence.png)
+
+![](/note_img/failing_throughout_sequence.png)
+
+#### `within` operator
+
+- Useful for testing a condition where a sequence is overlapping in part length of another sequence
+- Usage: `seq1 within seq2`
+- `seq1 within seq2` matches if `seq2` matches along the interval and `seq1` matches along some sub-interval of consecutive clock ticks during the interval
+
+Example:
+
+_Spec_: `trdy` has to be low for 7 cycles 1 cycle after `irdy` goes low and `irdy` stays low for 8 cycles
+
+```sv
+!trdy[*7] within (($fell irdy) ##1 !irdy[*8])
+```
+
+![](/note_img/matching_within_sequence.png)
+
+The above sequence match from clock 4(?) till clock 11
+
+#### `not` operator
+
+- Usage: `not(seq_exp)`
+- Example:
+
+_Spec_: After going high, the sequence of abc should not happen.
+
+```sv
+sequence seq_abc;
+    a ##1 b ##1 c;
+endsequence
+
+property nomatch_seq;
+    @(posedge clk) start |-> not(seq_abc);
+endproperty
+
+assert property nomatch_seq else $error();
+```
+
+Example #1:
+
+_Spec_: Squence `cd` should never follow sequence `ab`
+
+```sv
+property no_cd_after_ab;
+    not (a ##1 b |-> c ##1 d);
+endproperty
+```
+
+> Though this looks right, the implication operator cause `c ##1 d` only be evaluated once `a ##1 b` matched. Since there is a not, this can cause false failures as property also matches when `a ##1 b` doesn't match.
+
+```sv
+property no_cd_after_ab;
+    not (a ##1 b ##0 c ##1 d);
+endproperty
+```
+
+> Using `##0` will make this works correctly
