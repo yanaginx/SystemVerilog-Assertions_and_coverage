@@ -645,3 +645,80 @@ endproperty
 ```
 
 > Using `##0` will make this works correctly
+
+#### `if` in property
+
+- It is possible to select multiple property expressions using `if..else` condition inside a property
+
+```sv
+if(exp) property_expression1 else property_expression2
+```
+
+- Used mostly in properties with `antecedent |-> consequent` type of assertions
+
+- Based on antecedent - we use an `if..else` condition in the consequent expression
+
+Example:
+
+_Spec_: Signal `master_req` high should be followed by at least one of `req1` or `req2`. If `req1` then `ack1` should follow else `ack2`
+
+```sv
+property master_child_reqs;
+    @(posedge clk) master_req ##1 (req1 || req2) |->
+    if (req1)
+        (##1 ack1)
+    else
+        (##1 ack2);
+endproperty
+```
+
+_Spec_: on a cache access, if there is a cache lookup hit then `state=READ_CACHE` else if it's a miss `state=REQ_OUT`
+
+```sv
+property cache_hit_check
+    @(posedge clk) (state == CACHE_LOOKUP) ##1 (CHit || CMiss) |->
+    if (CHit)
+        state == CACHE_READ;
+    else
+        state == REQ_OUT;
+endproperty
+
+assert property(cache_hit_check) else $error;
+```
+
+#### `ended` operator
+
+- Used to detecting endpoint of sequence
+- Usage: `<seq_instance>.ended`
+- Returns true when the sequence has reached the end point at that point in time or else return false
+
+```sv
+sequence e1;
+    @(posedge sysclk) $rose(ready) ##1 proc1 ##1 proc2;
+endsequence
+
+sequence rule;
+    @(posedge sysclk) reset ##1 inst ##1 e1.ended ##1 branch_back;
+endsequence
+```
+
+In the sequence `rule`, state that 1 cycle after `reset` going high, `inst` must be asserted and after `inst` assertion for 1 cycle, `e1` must be ended. After `e1`'s end for 1 cycle, `branch_back` must be asserted.
+
+> Sequence `e1` must match (or end) exactly one cycle after `inst` assert
+
+For this case when using sequence instance:
+
+```sv
+sequence rule;
+    @(posedge sysclk) reset ##1 inst ##1 e1 ##1 branch_back;
+endsequence
+```
+
+This means `e1` is required to start 1 cycle later after `inst` is asserted
+
+Using `.ended` with non-overlapping implication:
+
+![](/note_img/ended_with_non_overlap.png)
+
+With the same example, for overlapping implication, the rose of `c` and the end of `ARbseq` must happen in the same cycle:
+![](/note_img/ended_with_overlap.png)
