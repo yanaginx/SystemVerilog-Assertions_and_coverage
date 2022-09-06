@@ -722,3 +722,75 @@ Using `.ended` with non-overlapping implication:
 
 With the same example, for overlapping implication, the rose of `c` and the end of `ARbseq` must happen in the same cycle:
 ![](/note_img/ended_with_overlap.png)
+
+#### Local variables
+
+- Can be used in a sequence as well as in the properties
+- Dynamically created when needed inside sequence instance and removed when sequence ends
+- Each instance of sequence will have its own copy of the variable
+- Local variables can be written on repeated sequences and accomplish accumulation of values
+
+```sv
+sequence rep_v;
+    int x;
+    `true, x=0 ##0
+    (!a [*0:$] ##1 a, x=x+data)[*4] ##1 b ##1 c && (data_out == x);
+endsequence
+```
+
+- The local variables declared in one sequence are not visible in the sequence where it gets instantiated:
+
+```sv
+sequence L_seq;
+    int lv_data;
+    (rdC, lv_data=rData);
+endsequence;
+
+sequence H_seq;
+    c ##1 L_seq ##1 (wData == lv_data); // `lv_data` not visible inside H_seq
+endsequence;
+```
+
+Example #1:
+
+_Spec_: The `rdData` associated with `rdDone` signal for a cache read gets written to register after 3 cycles with an incremented value
+
+```sv
+sequence rd_cache_done;
+    ##[1:5] rdDone;
+endsequence;
+
+sequence check_reg_wr_data;
+    int local_data;
+    (rd_cache_done, local_data=cache_rd_data) ##2 (reg_wr_data == (local_data+1))
+endsequence
+```
+
+Example #2:
+
+_Spec_: Once a read has been issued with a `readId`, another read cannot be issued with the same `readId` until `readAck` for the first `readId` comes back
+
+```sv
+property checkReadIdAck;
+    int loc_id;
+    ($rose(read), loc_id = readId) |=>
+    not (($rose(read) && readId == loc_id) [*1:$]) ##0
+    ($rose(readAck) && readAckID == loc_id)
+endproperty;
+```
+
+> Save `readId` on first read then we continue to check for "no" read with the same `readId` (continue till $) until we have the `readAck` of the same `readAckID`
+
+#### Subroutines
+
+- Tasks, void functions and system functions/tasks can be called at the end of a **successful** match on sequence
+
+```sv
+sequence s1;
+    logic v,w;
+    (a,v = e) ##1
+    (b[->1], w = f, $display("b after a with v = %h, w = %h\n", v, w);
+endsequence;
+```
+
+> `s1` matches strictly on first occurence of `b` 1 cycle after occurence of `a`. On the match - system task `$display` is used to print the local variables
