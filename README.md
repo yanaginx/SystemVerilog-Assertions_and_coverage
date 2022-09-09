@@ -794,3 +794,131 @@ endsequence;
 ```
 
 > `s1` matches strictly on first occurence of `b` 1 cycle after occurence of `a`. On the match - system task `$display` is used to print the local variables
+
+#### Sampled value functions
+
+- Special system functions are available for accessing sampling values of an expression:
+
+  - Access current sampled value
+  - Access sampled value in the past
+  - Detect changes in sampling values
+
+- Can also be used in procedural code in addition to assertions
+
+- `$rose`, `$fell`
+
+  - `$rose(expression[, clocking_event])`
+    - returns true if the least significat bit of expression changed to 1 from previous clocking event and otherwise returns false
+    - Sampled value in previous clock can be - `0`, `x` or `z`.
+  - `$fell(expression[, clocking_event])`
+    - returns true if the least significat bit of expression changed to 0 from previous clocking event and otherwise returns false
+    - Sampled value in previous clock can be - `1`, `x` or `z`.
+  - Clocking event is optional and is usually derived from the clocking event of assertion or inferred clock for procedural block
+
+  > `$rose` and `$fell` should only be used with 1-bit signal, if a vector is used -> only the lower bit will be looked at
+
+  - `$rose(signal)` is different from `@(posedge (signal))`
+
+    - `@(posedge (signal))` is true when signal changes from `0` to `1`
+    - `$rose(signal)` is true when the change to `1` happens across 2 clocking events
+
+  - Usage of `$fell`
+
+  _Spec_: If `write_en` goes low (indicating write operation) then `write_data` should not be `x`
+
+  ![](/note_img/fell_spec_example.png)
+
+  ```sv
+  property check_data_we;
+      @(posedge clk) $fell(write_en) |-> not ($isunknown(wr_data));
+  endproperty
+  ```
+
+- Why sampling is needed?
+
+_Spec_: `ack` should be asserted 2 cycles after `req` is asserted
+![](/note_img/correct_and_wrong_behaviour_example.png)
+
+Correct:
+
+```sv
+property check_req_ack_correct;
+@(posedge clk) req |=> ##2 $rose(ack);
+endproperty
+```
+
+> Actual assertion (rising from 0 to 1) must be recorded
+
+Wrong:
+
+```sv
+property check_req_ack_wrong;
+@(posedge clk) req |=> ##2 ack;
+endproperty
+```
+
+- `$stable`
+
+  - Usage: `$stable(expression [, clocking_event])`
+  - Returns true if value of expression did not change from its sample value at previous clock and otherwise returns false
+  - Example: Register data should be stable when `rd_en` goes high
+
+  ```sv
+  property reg_rd_data_stable;
+      @(posedge clk) rd_en |-> $stable(reg_data);
+  endproperty
+  ```
+
+- Example usage in procedural block and continuous assignment:
+
+  - Procedural block
+
+  ```sv
+  always @(posedge clk)
+      TestDone <= stimulus_over & $rose(unit_done);
+  ```
+
+  ```sv
+  always @(posedge clk) begin
+      if ($stable(my_sig)) begin
+          $display($time, "my_sig is stable from previous clk");
+      end
+  end
+  ```
+
+  - Continuous Assignment
+
+  ```sv
+  assign intr_cleared = $fell(intr, @(posedge clk));
+  assign set = $rose(intr, @(posedge clk));
+  ```
+
+- `$pass`
+
+  - An assertion can use the sampled value of an expression prior to any number of clock cycles in the past
+
+  - `$pass (expr [, num_cycles] [, gating_expr] [, clock_event])`
+
+    - `num_cycles` defaults to 1 if not specified
+    - `gating_expr` - optional gating expression for clocking event
+    - `clock_event` - if not specified will infer from property/assertion
+
+  - Example:
+
+  _Spec_: If `ack` is true then there was a request asserted 2 cycles before
+
+  ```sv
+  property ReqCausedAck;
+      @(posedge clk) $rose(ack) |-> $past(req, 2);
+  endproperty
+  ```
+
+- More Examples:
+
+_Spec_: if current state is `CACHE_READ`, then previous state cannot be `CACHE_MISS`
+
+```sv
+property cache_read_chk;
+    @(posedge clk) (state == CACHE_READ) |-> ($past(state) != CACHE_MISS);
+endproperty
+```
