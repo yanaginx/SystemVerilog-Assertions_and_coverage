@@ -87,18 +87,18 @@ Ex4:
 
 - Ex3:
     ```sv
-    property req_ack_required
+    sequence req_ack_required
         @(posedge clk) $rose(req) |=> not (!ack[*0:$] ##1 $rose(req)); 
-    endproperty
+    endsequence
 
-    assert property req_ack_required else $error("FAILED");
+    assert sequence req_ack_required else $error("FAILED");
     ```
 
 - Ex4:
     ```sv
-    property check_num_entries;
+    sequence check_num_entries;
         (fifo_write & fifo_read) |=> num_entries_fifo == $past(num_entries_fifo);
-    endproperty
+    endsequence
 
-    assert property check_num_entries else $error("FAILED");
+    assert sequence check_num_entries else $error("FAILED");
     ```
