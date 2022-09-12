@@ -91,7 +91,7 @@ Ex4:
         @(posedge clk) $rose(req) |=> not (!ack[*0:$] ##1 $rose(req)); 
     endsequence
 
-    assert sequence req_ack_required else $error("FAILED");
+    assert property (req_ack_required) else $error("FAILED");
     ```
 
 - Ex4:
@@ -100,5 +100,5 @@ Ex4:
         (fifo_write & fifo_read) |=> num_entries_fifo == $past(num_entries_fifo);
     endsequence
 
-    assert sequence check_num_entries else $error("FAILED");
+    assert property (check_num_entries) else $error("FAILED");
     ```
