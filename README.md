@@ -922,3 +922,78 @@ property cache_read_chk;
     @(posedge clk) (state == CACHE_READ) |-> ($past(state) != CACHE_MISS);
 endproperty
 ```
+
+#### System functions and Tasks
+
+- Useful in creating assertions/sequences/properties
+  - `$onehot`
+  - `$isunknown`
+  - `$countones`
+
+- Can be used in assertions as well as in normal procedural blocks
+
+- `$onehot`
+  - Usage: `$onehot (expression)`
+  - Returns true if there is only one bit of the expression is high
+  - `$onehot` will fail if expression is `z` or `x`
+  - Example: For an arbiter with `n` requests there can be only one grant at any cycle along with `ack`
+    ```sv
+    property arb_gnt_chk;
+        @(posedge clk) disable iff (reset) arb_ack |-> $onehot(arb_gnt_bus);
+    endproperty
+    ```
+
+- `$onehot0`
+  - Usage: `$onehot0 (expression)`
+  - Returns true if at most one bit of the expression is high (if all bits are zeros or if at most one bit is 1)
+  - `$onehot` will fail if expression is `z` or `x`
+  
+- `$isunknown`
+  - Usage: `$isunknown (expression)`
+  - Returns true if any bit of expression is `z` or `x` (equivalent to `^(expression) === 'bX`)
+  - Example: If a request is valid - then the request `address` and `data` and `id` signals should not be `X`
+    ```sv
+    property req_attr_check_X;
+        @(posedge clk) disable iff (reset) reqValid |-> not ($isunknown( {reqAddr, reqData, reqId} ));
+    endproperty
+    ```
+
+- `$countones`
+  - Usage: `$countones (expression)`
+  - Returns true if there is only one bit of the expression is high
+  - `$countones` will not count if any bits is `z` or `x`
+  - Example: For an arbiter with `n` requests there can be only one grant at any cycle along with `ack`
+    ```sv
+    property arb_gnt_chk;
+        @(posedge clk) disable iff (reset) arb_ack |-> ($countones(arb_gnt_bus) == 1);
+    endproperty
+    ```
+
+- `$assertoff`, `$asserton`, `$assertkill`
+  - `disable iff` gives a local control in the source of assertion
+  - `$assertoff`, `$asserton`, `$assertkill` gives a global control on assertions at module or instance level
+  - `$asserton` is default: can also be called after `$assertoff` or `$assertkill` to restart turning on of assertions
+  - `$assertoff` - temporarily turns off execution of assertions
+  - `$assertkill` - kills all currently executing assertions
+  - Usage:
+    ```sv
+    $assertoff (level, [list_of_module, _instance or assertion_identifier])
+    $asserton (level, [list_of_module, _instance or assertion_identifier])
+    $assertkill (level, [list_of_module, _instance or assertion_identifier])
+    ```
+    - Level 0: turns on/off assertions at ALL levels below current module/instance
+    - Level n: turns on/off assertions at n levels of hierachy below current module/instance
+    - `assertion_identifier` - name of property or label used with assert
+  - Example: Disable all asserts during reset and enable after reset de-assertion:
+    ```sv
+    module assert_control();
+        initial begin: disable_assert_during_reset
+            @(negedge top_tb.reset_n) // active low reset
+                $display("Disabling assertion during reset");
+                $assertoff(0, top_tb.cpu_inst1);
+            @(posedge top_tb.reset_n)
+                $display("Enabling assertions after reset");
+                $asserton(0, top_tb.cpu_inst1);
+        end
+    endmodule
+    ```
