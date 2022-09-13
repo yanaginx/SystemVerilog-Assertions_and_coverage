@@ -1120,3 +1120,92 @@ property chkPhase2;
 endproperty
 ```
 > This is valid since there is a time advancement (non-overlapping implication) and there is an antecedent
+
+### Multiple clock sequences
+- Multiple-clocked sequences are built by concatenating singly-clocked subsequences using the single-delay concatenation operator `##1`.
+```sv
+@(posedge clk0) sig0 ##1 @(posedge clk1) sig1
+```
+- A match of this sequence starts with a match of `sig0` at posedge `clk0`
+- Then `##1` moves the time to the nearest strictly subsequent posedge `clk1`, and the match of the sequence ends at that point with a match of `sig1`
+
+#### Restrictions
+- Diffrently-clocked or multiply-clocked sequence operands cannot be combined with any sequence operators other than `##1`
+
+> As we strictly look for next clocking event in the next clock after `##1` operator
+
+- `and`, `or`, `intersect` are illegal in sequences with 2 clocks.
+
+-> The `and`, `or`, `not` operators can be used in multiple-clock **properties** (not in sequences).
+
+#### Multiple-clock properties
+
+```sv
+property mclk_prop;
+    @(posedge clk1) b and @(posedge clk2) c; 
+endproperty
+
+assert property (@(posedge clk0) a |=> mclk_prop) else $error();
+```
+
+> The property `mclk_prop` means looks for the assertion of `b` signal each `clk1` posedge and the assertion of `c` signal each `clk2` posedge
+
+![](/note_img/match_multiple_clock_prop.png)
+
+A match happens if `b` and `c` are true and the next clock edge of `clk1` and `clk2` after `a` matches on an edge of `clk0`
+
+
+*Using `not` operator in multiple clock property*
+
+```sv
+property mclk_prop;
+    @(posedge clk1) b and @(posedge clk2) c; 
+endproperty
+
+assert property (@(posedge clk0) a |=> mclk_prop) else $error();
+```
+
+> Fails if `c` goes high on the `clk2` edge after `b` matches since we have a `not`
+
+
+### Clock resolution 
+- There are several ways to specify clock for a property
+- Sequence instance has a clock
+  ```sv
+  sequence s2; @(posedge clk) a ##2 b; endsequence
+  property p2; not s2; endproperty
+  assert property (p2);
+  ```
+
+- Property itself has a clock
+  ```sv
+  property p3; @(posedge clk) not (a ##2 b); endproperty
+  assert property (p3);
+  ```
+
+- Infer clock from the procedural block that calls the assertion
+  ```sv
+  always @(posedge clk) assert property (not (a ##2 b));
+  ```
+
+- Infer from the clocking block where property is declared
+  ```sv
+  clocking master_clk @(posedge clk);
+      property p3;
+          not (a ##2 b);
+      endproperty
+  endclocking
+
+  assert property (master_clk.p3);
+  ```
+
+#### Clock resolution rules
+
+Determined in decreasing order of priority:
+- Explicitly specified clock for the assertion.
+- Inferred clock from the context of the code when embedded.
+- Default clock, if specified.
+
+Clock needs to be explicitly specified for multi-clock assertions -> No default or inferred clock
+
+Do not embed inside clocking blocks
