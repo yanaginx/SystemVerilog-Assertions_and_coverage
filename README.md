@@ -385,7 +385,7 @@ sequence a_b
 endsequence
 ```
 
-> `b[=3:5]` means `b` must be true for minimum 3 clocks and maximum 5 clocks but not necessarily
+> `b[=3:5]` means `b` must be true for minimum 3 clocks and maximum 5 clocks but not necessarily consecutive
 
 - Empty sequence: a sequence that does not match over any positive number of clocks
   > `a[*0]`
@@ -997,3 +997,126 @@ endproperty
         end
     endmodule
     ```
+
+
+
+
+
+
+
+## Properties and Clocking
+
+### Properties - Basics and types
+- Defines behaviour of a design 
+- Can be used for verification as an assumption, a checker or a coverage specification
+  - Assert to specify the property as a checker to ensure that the property holds for the design
+- Types of properties:
+  - sequence
+  - negation
+  - disjunction
+  - conjunction
+  - if..else
+  - implication
+  - instantiation
+
+**Sequence**
+- Sequence evaluates to true iff there is a non-empty match of the sequence
+- As soon as a match of `sequence_expr` is determined, the evaluation of the property is considered to be true
+
+**Negation**
+- `not property_expr` is used to negate the result of the evaluation of `property_expr`
+
+**Disjunction**
+- `property_expr1 OR property_expr2`
+- The property evaluates to true iff at least one of the `property_expr` evaluates to true
+
+**Conjunction**
+- `property_expr1 AND property_expr2`
+- The property evaluates to true iff both of the `property_expr` evaluates to true
+
+**if..else**
+- `if (expr) property_expr1`
+- `if (expr) property_expr1 else property_expr2`
+
+**Implication**
+- Overlapping (evaluate the RHS in the same cycle)
+  - `expr1 |-> expr2`
+- Non-overlapping (evaluate the RHS in the next clock cycle)
+  - `expr1 |=> expr2`
+
+**Instantiation**
+- An instance of a named property can be used as another `property_expr` or `property_spec`
+```sv
+property rule6(x,y);
+    ##1 x |-> y;
+endproperty
+
+property rule5a;
+    @(posedge clk)
+    a ##1 (b || c) [->1] |->
+        if (b)
+            rule6(d,e);
+        else // c
+            f;
+endproperty
+```
+
+### Recursive property
+A named property is recursive if its declaration involves an instantiation of itself.
+
+```sv
+property prop_always(p);
+    p and (1'b1 |=> prop_always(p));
+endproperty
+```
+
+
+> Specifies that signal `p` must hold at every cycle. The `and` operator will return true if both operands return true 
+
+```sv
+assert property (@posedge clk) $fell(reset) |-> prop_always(bootStrap))
+        else $error;
+```
+
+> The above ensure that after reset is de-asserted the signal `bootStrap` holds to 1. Anytime it goes low, the assertion fires.
+
+For the `prop_always`, changing from non-overlapping implication to overlapping implication will results in an infinite loop recursion in the same cycle -> run-time error.
+
+> Recursive call must always be evaluated (called) in the next cycle.
+
+Example:
+
+_Spec_: Interrupt must hold until interrupt `ack` is received.
+
+Passing:
+![](/note_img/passing_recursive_prop.png)
+
+Failing:
+![](/note_img/failing_recursive_prop.png)
+
+```sv
+property intr_hold(intr, intrAck);
+    intrAck or (intr and (1'b1 |=> intr_hold(intr, intrAck)));
+endproperty
+```
+
+> The `and` between intr and the recursive call will make sure that if `intr` goes low before `intrAck` -> the assertion fails
+>
+> The `or` make sure that the property pass when `intrAck` goes high
+
+#### Restriction
+- Operator `not` cannot be used in recursive property instances.
+- Operator `disable iff` cannot be used in recursive property instances.
+- If `p` is a recursive property, in the declaration of `p`, every instance of `p` must occur after a positive advance in time. (`|->` overlapping operator will cause runtime error - infinite loop).
+
+#### Mutual recursion
+Recursive properties can be mutally recursive
+```sv
+property chkPhase1;
+    c |-> a and (1'b1 |=> chkPhase2);
+endproperty
+property chkPhase2;
+    d |-> b and (1'b1 |=> chkPhase1);
+endproperty
+```
+> This is valid since there is a time advancement (non-overlapping implication) and there is an antecedent
