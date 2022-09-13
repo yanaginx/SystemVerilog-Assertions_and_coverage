@@ -1209,3 +1209,99 @@ Determined in decreasing order of priority:
 Clock needs to be explicitly specified for multi-clock assertions -> No default or inferred clock
 
 Do not embed inside clocking blocks
+
+### Binding assertions to design
+Assertions can be either:
+- Embeded in the design
+- Defined outside the design (preferred)
+
+> **Bind** is a way in which assertions defined outside the design can be bound to a design module or interface
+
+Usage:
+```sv
+bind design_block_or_instance_name block_with_assertions
+```
+
+Binding possible to a specific instance or all instances of a module/interface
+
+*Advantages:*
+- Assertions can be added without changing the design files
+
+Example: Interface `range` is instantiated inside a module `cr_unit` and hence every instance of module will have assertions:
+
+```sv
+interface range (input clk, enable, input int minval, expr);
+    property crange_en;
+        @(posedge clk) enable |-> (minval <= expr);
+    endproperty
+range_chk: assert property (crange_en);
+endinterface
+
+bind cr_unit range r1(c_clk, c_en, v_low, (in1&&in2));
+```
+
+### Expect
+- `expect` statement is a procedural blocking statement that allows waiting on a property evaluation
+- Same syntax as `assert` statement used inside a procedural block (though assert can be used outside procedural block also).
+
+```sv
+expect(property_spec) action_block
+```
+
+- `assert` is non-blocking while `expect` is blocking
+  - `assert` always create a seperate thread and runs parallely
+  - `expect` blocks the procedural block until the sequence/property completes
+  
+Example:
+```sv
+initial begin
+    # 200ms;
+    expect ( @(posedge clk) a ##1 b ## c ) else $error("expect failed");
+    ABC: ...
+end
+```
+
+> 200ms after the simulation start - if we see `a=1, b=1, c=1` in three consecutive cycles -> `expect` will pass
+> 
+> Since it is blocking, `ABC` will be execute 3 cycles after 200ms delay since the simulation start (if only the `expect` pass as there is a runtime error used in the `else` condition);
+> 
+- Useful for cases where certain sequences of events are expected and act based on that in the following procedural code
+
+- Can also be used in tasks or class methods
+- Can refer to both static and automatic variable since it's blocking code
+```sv
+integer data;
+...
+task automatic wait_for (integer value, output bit success);
+    expect( @(posedge clk) ##[1:10] data == value ) success = 1;
+    else success = 0;
+endtask
+
+initial begin
+    bit ok;
+    wait_for( 23, ok );
+    ...
+end
+```
+
+- `expect` doesn't infer clock from its preceding procedural block
+-> Clock needs to be specified explicitly in the sequence or property it uses
+```sv
+sequence simple_seq;
+    a ##1 b ##1 c;
+endsequence
+
+property simple_prop
+    @(posedge clk) d |=> simple_seq;
+endproperty
+
+initial begin
+    expect( @(posedge clk) simple_seq );
+    expect simple_prop;
+    @(posedge clk) expect (simple_seq);
+end
+```
+
+> 1st and 2nd `expect` declaration is valid since clock is specified explicitly
+> 
+> 3rd declaration cause error since no clock specified.
