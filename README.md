@@ -1305,3 +1305,49 @@ end
 > 1st and 2nd `expect` declaration is valid since clock is specified explicitly
 > 
 > 3rd declaration cause error since no clock specified.
+
+
+## Tips and best usage
+- Labelling: Always label meaningfully
+  - Label gets printed during failure and also shows up in waveform
+Example:
+```sv
+ERROR_q_did_not_follow_d:
+    assert property ( @(posedge clk) disable iff (!rst_n) (q == $past(d)) );
+```
+
+- Static and dynamic casting:
+  - Static cast: using the cast operator `'`
+    - `int'(2.0 * 3.0)`
+    - No return value on pass/fail condition possible
+  - Dynamic cast: using the system task/function `$cast(dest, source)`
+    - Can be called as a function (with return value) or a task (with no return value)
+    - Return a pass/fail condition
+    ```sv
+    typedef enum{START, RUN, FINISH} States;
+    States state;
+    $cast(state, 2);
+    ```
+  > `$cast` will be useful with usage of base classes and derived classes in any advanced verification methodologies
+  > 
+  > Use an `assert()` around `$cast()` as a best practice to catch wrong casting
+    ```sv
+    typedef enum{START, RUN, FINISH} States;
+    initial begin
+        States state;
+        int value;
+        value = 3; // WILL FAIL IF CAST
+        ERROR_bad_state: assert( $cast(state, value) );
+    end
+    ```
+
+- Usage of macros
+  ```sv
+  `define assert_clk(arg, enable_error=0, msg="") \
+      assert property ( @(posedge clk) disable iff (!rst_n) arg ) \
+      else if(enable_error) $error("%t: %m: %s", $time, msg)
+  ```
+  - Usage:
+  ```sv
+  ERROR_q_did_not_follow_q: `assert_clk((q==$past(d)), 1, "***ERROR!!***");
+  ```
