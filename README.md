@@ -1744,3 +1744,180 @@ covergroup CoverPort;
     }
 endgroup : CoverPort
 ```
+
+### Cross Coverage
+- Coverage points measures occurrences of individual values
+- Cross coverage measures occurrences of combination of values
+- This is interesting because design complexity is in combination of events and that is what we need to make sure it is exercised as well 
+  - Did I inject all combination of request types while my design's FSM is in all states?
+- Cross coverage is specified between two or more coverpoints in a covergroup
+- A cross of `N` coverpoints can be defined as the coverage of all combinations of all the bins associated with all of the `N` coverpoints
+- For E.g. A cross of 2 coverpoints of 2 4-bit signals wil cover 256 combinations as each individual coverpoint will cover 16 combinations
+  ```sv
+  bit [3:0] a,b;
+
+  covergroup cov @(posedge clk);
+      aXb : cross a, b;
+  endgroup
+  ```
+- Cross coverage is allowed only between coverage points defined within the same coverage group
+- Cross coverage between expressions previously defined as coverage points is also allowed
+  ```sv
+  bit [3:0] a,b,c;
+
+  covergroup cov2 @(posedge clk);
+      BC: coverpoint b+c;
+      aXb : cross a, BC;
+  endgroup
+  ```
+
+*Example:*
+```sv
+bit [31:0] a_var;
+bit [3:0] b_var;
+
+covergroup cov3 @(posedge clk);
+    A: coverpoint a_var { bins yy[] = { [0:9] }; }
+    CC: cross b_var, A;
+endgroup 
+```
+
+```
+A: 10 bins
+b_var: 16 bins
+=> CC: 10 * 16 bins = 160 bins
+```
+
+#### Cross coverage bins select expression
+2 expressions on bins:
+- `binsof`
+- `intersect`
+
+*`binsof`*:
+- Yields the bins of its expression in arguments `binsof(X)`
+- The resulting bins can be further selected by including (or excluding) only the bins whose associated values intersect a desired set of values
+- `binsof(x) intersect { y }`
+  - Denotes the bins of coverage point `x` whose values intersect the range `y` given
+- `!binsof(x) intersect { y }`
+  - Denotes the bins of coverage point `x` whose values does not intersect the range `y` given
+- Bins selection can be combined with `&&` and `||`
+
+*Example:*
+```sv
+covergoup cg @(posedge clk);
+
+    a: coverpoint v_a {
+      bins a1 = { [0:63] };
+      bins a2 = { [64:127] };
+      bins a3 = { [128:191] };
+      bins a4 = { [192:255] };
+    }
+
+    b: coverpoint v_b {
+      bins b1 = { 0 };
+      bins b2 = { [1:84] };
+      bins b3 = { [85:169] };
+      bins b4 = { [170:255] };
+    }
+
+    c : cross v_a, v_b {
+      bins c1 = !binsof(a) intersect { [100:200] }; // 4 cross products
+      // Only a1 is used for the cross since its not intersecting with [100:200]
+      // a1 b1, a1 b2, a1 b3, a1 b4
+      bins c2 = binsof(a.a2) || binsof(b.b2); // 7 cross products
+      // Use a2 and b2 for cross products
+      // a2 b1, a2 b2, a2 b3, a2 b4, b2 a1, b2 a3, b2 a4
+      bins c3 = binsof(a.a1) && binsof(b.b4); // 1 cross product
+      // Use both a1 and b4 only for cross product
+      // a1 b4
+    }
+endgroup
+```
+
+#### Excluding cross products
+- A group of bins can be excluded from coverage by specifying a select expression using `ignore_bins`
+  ```sv
+  covergroup yy;
+      cross a,b {
+        ignore_bins foo = binsof(a) intersect {5, [1:3]}; 
+      }
+  endgroup
+  ```
+- All cross products that satisfy the select expression are excluded from coverage
+- Ignored cross products are excluded even if they are included in other cross-coverage bins of the enclosing cross
+
+#### Specifying illegal cross products
+- A group of bins can be marked as illegal from coverage by specifying a select expression using `illegal_bins`
+  ```sv
+  covergroup zz(int bad);
+      cross x,y {
+        ignore_bins foo = binsof(a) intersect {bad}; 
+      }
+  endgroup
+  ```
+
+### Coverage options
+- Options control the behaviour of the `covergroup`, `coverpoint` and `cross`
+- 2 types of options:
+  - Specific to an instance of a covergroup
+  - Specify for the covergroup
+- Options placed in the cover group will apply to all cover points
+- Options can also be put inside a single cover point for finer control
+
+#### `option.comment`
+Add a comment to make coverage reports easier to read
+```sv
+covergroup CoverPort;
+    option.comment = "Section 3.2.14 Port numbers";
+    coverpoint port;
+endgroup
+```
+
+#### Per-instance coverage
+- If the testbench instantiates a coverage group multiple times, by default SV groups togeter all the coverage data from all instances
+- Sometime coverpoints are hit on all instances of the covergorup but not cumulatively
+-> Use the `option.per_instance = 1`
+
+```sv
+covergroup CoverLength;
+    coverpoint tr.length;
+    option.per_instance = 1;
+endgroup
+```
+
+#### Coverage threshold using `option.at_least`
+- By default a coverpoint is marked as 100% hit if it is hit at least once.
+- Sometime the threshold needed to be changed (bigger)
+- Usage: `option.at_least = 10`
+  
+#### Coverage goal option
+- By default a covergroup or a coverpoint is considered fully covered only if it hit 100% of coverpoints or bins
+- The can be changed using `option.goal` if a less goal is wanted to settle.
+
+#### `option.weight`
+- If set at the covergroup level, it specifies the weight of this covergroup instance for computing the overall instance coverage
+- If set at the coverpoint (or cross) level, it specifies the weight of a coverpoint (or cross) for computing the instance coverage of the enclosing covergroup
+- Usage: `option.weight = 2` (default is 1) 
+- Useful when prioritizing certain coverpoints/covergroups as "must" hit versus less important
+
+*Example*
+```sv
+covergroup cross_weight;
+    a: coverpoint siga {
+      bins a0 = {0};
+      option.weight = 0; // Will not be used in computing coverage
+    }
+    b: coverpoint sigb {
+      bins b1 = {1};
+      option.weight = 1;
+    }
+    ab: cross a,b {
+      option.weight = 3;
+    }
+endgroup
+```
+
+> Individual coverage on signal is of no interest - but only useful in cross coverage
+
+#### `auto_bin_max` and `cross_auto_bin_max`
+Use to specified maximum number of bins for coverpoints and crosses
