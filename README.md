@@ -1351,3 +1351,396 @@ ERROR_q_did_not_follow_d:
   ```sv
   ERROR_q_did_not_follow_q: `assert_clk((q==$past(d)), 1, "***ERROR!!***");
   ```
+
+
+## Functional Coverage Coding
+
+### Introduction to Coverage
+- Coverage is a metric of completeness of verification.
+- Impossible to have directed testing for complex design -> Constrained random verification is used
+  - Coverage is used to make sure what is getting verified
+  - Make sure that all of importance design state space is verified
+- 2 types: Functional and Code coverage
+
+#### Code coverage
+A way to analyze how many percentage of the source code have been covered during the simulation.
+- Statement: has each statement of the source code been executed?
+- Branch: Has each control structure been evaluated to both true and false? (if..else, while, repeat, forever, for...)
+- Condition: has each boolean sub-expression evaluated both to true and false?
+- Expression: Covers the RHS of an assignment statement
+- Toggle: covers logic node transitions (cover 0->1, 1->0,)
+- FMS: state coverage and FSM Arc coverage.
+
+#### Functional coverage
+Covers the functionality of the DUT. Functional coverage is derived from the specification.
+- DUT inputs: Are all input operations injected?
+- DUT outputs/functions: Are all responses seen from every output port?
+- DUT internals: Are all interested design events being verified? (e.g. FIFO fulls, arbitration mechanisms)
+
+Examples:
+- Have I exercised all the protocol request types and combinations?
+  - Burst reads, writes, atomic reads, flushes, etc.
+- Have we accessed different memory aligments?
+  - Byte aligned, word aligned, dword aligned
+- Did we verify sequence of transactions?
+  - Reads followed by writes
+- Did we verify queue full and empty conditions?
+  - Input and output Q getting full and new requests getting backpressured
+
+> High code coverage + high functional coverage -> Good coverage
+
+#### Coverage driven verification
+```bash
+From Verification Plan: -> Create initial coverage metrics
+                                      ||
+                                      \/
+                              Generate Random Tests
+                                      ||
+                                      \/
+                   ----------> Run Tests; Collect Coverage
+                  ||                  ||
+                  ||                  \/
+                  ||                Coverage
+                  ||                  goals   - Yes -> Verification complete
+                  ||                  met?
+                  ||                  ||
+                  ||                  No
+                  ||                  ||
+                  ||                  \/
+                  ||          Identify coverage holes
+                  ||                  ||
+                  ||                  \/
+                  ||          Add tests to target holes
+                  ---------- Enhance stimulus generator
+                            Enhance coverage metrics if needed
+```
+
+
+### Covergroups and coverpoints - Basics
+SV functional coverage constructs enable:
+- Converage of variables and expressions, as well as cross coverage between them
+- Automatic and also user-defined coverage bins
+- Associate bins with sets of values, transitions or cross products 
+- Events and sequences to automatically trigger coverage sampling
+- Procedural activation and query of coverage
+
+#### Covergroup
+- Encapsulates the specification of a coverage model
+- Is a user-defined type that allows collectively sampling process of all variables/transitions/cross that are sampled at the same clock (or sampling) edge
+- Can be defined insde a package, module, interface, program block and class
+- Once defined, can be instantiated using `new()` keyword
+
+*Syntax*:
+```sv
+covergroup covergroup_name [([tf_port_list])] [coverage_event];
+    { coverage_spec_or_option; }
+endgroup[ : covergroup_name]
+```
+
+*Example*:
+```sv
+covergroup cg; 
+    ... 
+endgroup : cg
+
+cg cg_inst = new;
+
+```
+
+#### Coverpoints
+- A coverage point ("coverpoint") is a variable or an expression that functionally covers design parameters
+- Each coverage point includes a set of bins associated with its sampled values or its value-transitions
+- The bin can be automatically generated or manually specified
+- A covergroup can contain one or more coverpoints
+
+*Syntax*:
+```sv
+cover_point ::= 
+    [ cover_point_identifier : ] coverpoint expression [ iff (expression) ] bins_or_empty
+
+bins_or_empty ::= 
+    { {attribute_instance} {bins_or_options;} }
+    ;
+```
+
+*Example*:
+```sv
+covergroup g4;
+    coverpoint s0 iff (!reset);
+endgroup : g4
+```
+
+#### bin
+- A `bin` is a construct used to collect coverage information
+- Allows organizing coverpoint sample values in different ways
+  - single value
+  - values in range, multiple ranges
+  - illegal values
+- If the `bin` construct is not used, `coverpoint` will generate automatic values baased on the variable type
+  - If variable is 2-bit -> 4 automatic bins are created
+
+*Example*:
+```sv
+bins fixed[] = {1:10, 1, 5, 7} // 13 bins cre created
+bins fixed[4] = {1:10, 1, 5, 7} // 4 bins are created with distribution <1,2,3>, <4,5,6>, <7,8,9>, <10,1,5,7>
+```
+
+```sv
+bit [9:0] v_a;
+
+coverpoint v_a {
+  bins a = { [0:63], 65 };
+  bins b[] = { [127:150], [148:191] };
+  bins c[] = { 200,201,202 };
+  bins d = { [1000:$] };
+  bins others[] = default;
+}
+```
+
+> a: single bin with either `65` or `[0:63]`
+> 
+> b: overlapping values in multiple bins
+> 
+> c: create 3 bins
+> 
+> d: $ = 1024 in this case (max value)
+> 
+> e: All other possible values
+
+*Example 2:*
+```sv
+covergroup CovKind;
+    coverpoint tr.kind {       // tr.kind is 4-bit wide
+        bins zero = {0};       // A bin for kind == 0
+        bins lo   = { [1:3] }; // 1 bin for values 1:3
+        bins hi[] = { [8:$] }; // 8 seperate bins
+        bins misc = default;   // 1 bin for all the rest 
+    }
+endgroup // CovKind
+```
+
+#### Covergroup arguments
+- Generic/Parameterized covergroups can be writtern using arguments
+  - Useful if similar covergroups are needed with different parameters or covering different signals
+  - E.g. Covergroup for all basic FIFO conditions (for size, etc.)
+- Actual values can be passed to formal arguments while covergroup is instantiated
+- `ref` is needed if variable is passed as `actual` value to a formal argument. For const - `ref` is no need
+
+*Example*: Same covergroup can be instantiate to cover attributes to two different address buses:
+
+```sv
+bit [16:0] rdAddr, wrAddr;
+
+covergroup addr_cov (int low, int high, ref bit[16:0] address);
+    @(posedge clk)
+    addr_range_cp: coverpoint address {
+      bins addr_bin = { [low:high] }
+    }
+endgroup : addr_cov
+
+addr_cov rd_cov = new (0, 31, rdAddr);
+addr_cov wr_cov = new (64, 127, wrAddr);
+```
+
+#### Covergroup inside class
+- By embedding covergroup inside class - coverage can be collected on class members
+- Very useful as it ia a nice way to mix constrained random stimulus generation along with coverage
+- A class can have multiple covergroups
+- Embedded covergroups must be instantiated (new-ed) inside the `new` (constructor) of the class
+
+*Example:*
+```sv
+class xyz;
+    bit [3:0] m_x;
+    int m_y;
+    bit m_z;
+
+    covergroup cov1 @m_z;
+        coverpoint m_x;
+        coverpoint m_y;
+    endgroup
+
+    function new();
+        cov1 = new;
+    endfunction
+endclass : xyz;
+```
+
+```sv
+class MC;
+    logic [3:0] m_x;
+    local logic m_z;
+    bit m_e;
+    covergroup cv1 @(posedge clk); coverpoint m_x; endgroup
+    covergroup cv1 @m_e; coverpoint m_z; endgroup
+endclass
+```
+
+Passing arguments through the constructor (`new()` function of the class)
+```sv
+class C1;
+    bit [7:0] x;
+
+    covergroup cv (int arg) @(posedge clk);
+        option.at_least = arg;
+        coverpoint x;
+    endgroup
+
+    function new (int p1);
+        cv = new (p1);
+    endfunction 
+endclass
+
+initial begin
+    C1 obj = new(4);
+end
+```
+
+### Coverage bins
+#### Bins for transition coverage
+- Certain values or value ranges happening is considered.
+- The existence of transition between two values or two value ranges is also considered.
+
+*Specifiying transitions*
+- Single value transition `value1 => value2`
+- Sequence of transitions (sampled accross clock edged) `value1 => value3 => value4 => value5`
+- A set of transitions (or range transition) `range_list1 => range_list2`
+- Consecutive repetitions of transitions `trans_item [* repeat_range]`
+
+*Example*
+```sv
+bit [4:1] v_a;
+
+covergroup cg @(posedge clk);
+
+    coverpoint v_a {
+        // bins sa = (4 => 5 => 6), ( [7:9], 10 => 11, 12 );
+        // the above is the same as the below
+        bins sa = (4 => 5 => 6), ( ([7:9], 10) => (11, 12) );
+        bins sb[] = (4 => 5 => 6), ( ([7:9], 10) => (11, 12) );
+        bins allother = default sequence; 
+    }
+
+endgroup
+```
+
+- sa = `4=>5=>6`; `7=>11`; `8=>11`; `9=>11`; `10=>11`; `7=>12`; `8=>12`; `9=>12`; `10=>12`;
+- sb will associate individual bins for all above transition
+
+*Example #2*:
+- Consecutive repetitions:
+  ```sv
+      // Consecutive repetitions of transitions
+      bins <name> = { 3 [*5] }; // 3=>3=>3=>3=>3
+      // Consecutive range of repetition:
+      bins <name> = { 3 [*3:5] } // 3=>3=>3, 3=>3=>3=>3, 3=>3=>3=>3=>3
+  ```
+- Non-consecutive repetitions:
+  ```sv
+      // Consecutive repetitions of transitions
+      bins <name> = { 3 [=> 3] }; // 3=>...=>3...=>3
+  ```
+
+#### Automatic bin creation
+- SV creates implicit bins, when the coverage point does not explicitly specifies, it use the bins construct
+- The size of automatic bin creation is decided by the cardinality of coverage point as long
+  - For an enum coverage point, N is the cardinality of the enumeration
+  - For any other integral coverage point, N is the minimum of 2M and the value of the `auto_bin_max` option, where M is the number of bits needed to represent the coverage point
+- If the `auto_bin_max` option is less than the cardinality of the coverage point, the values are equally distributed among the bins
+- Bins created automatically only consider 2-state values (not looking for the value `x` or `z`)
+- Each auto bin will have a name of the form: `auto[value]`
+  - Value -> single or range coverpoint value
+  - Value -> enum constant on enum
+
+*Example*
+```sv
+bit [2:0] rdAddr;
+
+covergroup addr_cov @(posedge clk)
+    coverpoint rdAddr;
+endgroup
+```
+
+> In this example, the cardinality of coverpoint is 2^3 = 8 bins
+> 
+> If `auto_bin_max` is not specified - creates 8 automatic bins to cover each value
+> 
+> If `auto_bin_max` is 3, the values are distributed uniformly as `<0:1>, <2:3>, <4:5:6:7>` into 3 bins
+
+
+#### Wildcard bin
+- Wildcard bin is where all `x`, `z` or `?` will be treated as wildcards for `0` and `1`
+  ```sv
+  bit [2:0] port;
+  covergroup CoverPort;
+      coverpoint port {
+        wildcard bins even = { 3'b??0 };
+        wildcard bins odd = { 3'b??1 };
+      }
+  endgroup : CoverPort
+  ```
+
+*Example*
+```sv
+wildcard bins g12_16 = { 4'b11?? }; 
+```
+
+> The count of bin `g12_16` is incremeneted when the sampled variable is between 12 and 16: 1100 1101 1110 1111
+
+```sv
+// The count of transition bin T0_3 is incremented for
+// the transitions: 00 => 10, 00 => 11, 01 => 10, 01 => 11
+// as if by (0,1 => 2,3)
+
+wildcard bins T0_3 = (2'b0x => 2'b1x);
+```
+
+#### Excluding bins
+- Sometimes not all the bins will be interested or maybe some of them may not be valid to be covered
+- 2 ways to exclude bins and also to put explicit checks
+  - `ignore_bins`
+  - `illegal_bins`
+
+*`ignore_bins`*
+- A set of values or transitions associated with a coverage-point can be explicitly excluded from coverage by specifying them as `ignore_bins`
+  ```sv
+  covergroup cg23;
+      coverpoint a {
+        ignore_bins ignore_vals = { 7,8 };
+        ignore_bins ignore_trans = (1=>3=>5);
+      }
+  endgroup
+  ```
+> All values or transitions associated with ignored bins are excluded from coverage.
+>
+> Ignored values or transitions are excluded even if they are also included in another bin.
+
+
+*`illegal_bins`*
+- A set of values or transitions associated with a coverage-point can be marked as illegal by specifying them as `illegal_bins`
+  ```sv
+  covergroup cg3;
+      coverpoint b {
+        illegal_bins bad_vals = { 1,2,3 };
+        illegal_bins bad_trans = (4=>5=>6);
+      }
+  endgroup
+  ```
+
+> These values are excluded from the coverage.
+> 
+> If they occur, a run-time error will be issued
+> 
+> They will result a run-time error even if they are also included in another bin.
+
+*Example:* Create auto bins for 3 bit signal - but limit the coverage to only values 0 to 5 (instead of default 8 values)
+
+```sv
+bit [0:2] low_ports_0_5;
+
+covergroup CoverPort;
+    coverpoint low_ports_0_5 {
+      ignore_bins hi = { 6,7 };
+    }
+endgroup : CoverPort
+```
