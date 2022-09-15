@@ -1921,3 +1921,90 @@ endgroup
 
 #### `auto_bin_max` and `cross_auto_bin_max`
 Use to specified maximum number of bins for coverpoints and crosses
+
+
+### Coverage methods, performance, coverage properties and misc
+
+#### Predefined coverage methods
+![](/note_img/predefined_coverage_function.png)
+
+- `void sample()`
+  - Useful when coverage sampling needs to be done based on some event or condition and not always
+  - Example: For an 2x2 switch - coverage for all packet fields needs to be measured only on events when packet is received
+  ```sv
+  covergroup packet_cov_cg;
+      coverpoint dest_addr;
+      coverpoint packet_type;
+  endgroup
+
+  packet_cov_cg pkt_cov;
+  pkt_cov = new();
+
+  always @(pkt_recieved) begin
+      pkt_cov.sample();
+  end
+  ```
+
+- `void start()` and `void stop()`
+  - Useful when you want to start/stop sampling on certain conditions
+  - Example: If a port is disabled dynamically - stop coverage sampling until it is enabled again
+  ```sv
+  covergroup packet_cov_cg @(posedge clk)
+      coverpoint dest_addr;
+      coverpoint packet_type;
+  endgroup
+
+  packet_cov_cg pkt_cov;
+  pkt_cov = new();
+
+  always @(posedge clk) begin
+      if (port_disable)
+          pkt_cov.stop();
+      else if (port_enable)
+          pkt_cov.start();  
+  end
+  ```
+
+*Predefined tasks and functions*: Help managing coverage data collection
+
+- `$set_coverage_db_name(name)`
+  - Sets the filename of the coverage database into which coverage information is saved at the end of a simulation run
+- `$load_coverage_db(name)`
+  - Load from the given filename the cumulative coverage information for all coverage group types 
+- `$get_coverage()`
+  - Returns as a real number in the range 0-100 the overall coverage of all coverage group types
+
+#### `cover property`
+- Use the same SVA temporal syntax and define sequences and properties
+- The same property that is used as an assertion can be used for coverage using `cover property` keyword
+- Syntax: `cover property (sequence_expr) statement_or_null`
+
+```sv
+property abc;
+    @(posedge clk) !a |-> b ##1 c;
+endproperty
+
+cp_abc: cover property (abc) $display("Coverage abc seq passed");
+```
+- The rsult of coverage statement for a property shall contain:
+  - Number of times attempted
+  - Number of times succeeded
+  - Number of times failed
+- The `statement_or_null` is executed everytime a property succeeds
+
+#### Performance implications
+- Enabling Functional coverage slows down the simulation
+- It is important to know what should be covered and what should not:
+  - Don't cover all values for big buses. E.g.: It might only be interesting to cover select address ranges for a 32-bit address bus
+  - Same applies for counter ranges, FIFO/Data structure depth, etc.
+  - Don't use auto bins for such wide variables. Be careful while using autobins and cross as it can explode the coverage bins. It's also hard to debug as names are also auto generated
+  - Use `cross` and `intersect` to weed out unwanted bins
+- Should know when to enable/disable sample a covergroup:
+  - Disable coverpoint/covergroup during reset
+  - Don't blindly use clock events to sample coverpoint variables -> Use selective `sample()` methods
+  - Use `start()` and `stop()` methods to decide when to start/stop evaluating coverage
+  - Do not duplicate coverage across covergroups and properties
+  
+#### Collecting and analyzing coverage
+- Mostly controlled by simulation tools
+- Coverage database, merging, report generation and viewers are all supported by different tools
